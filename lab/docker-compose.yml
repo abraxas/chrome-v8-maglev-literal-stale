@@ -1,0 +1,25 @@
+name: cve126910
+
+services:
+  lab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cve-2026-126910:lab
+    pull_policy: never
+    init: true
+    restart: "no"
+    shm_size: "2gb"
+    security_opt:
+      - seccomp:unconfined
+    ports:
+      - "127.0.0.1:18630:18630"
+    volumes:
+      - ./:/out
+      - ./poc.py:/lab/poc.py:ro
+      - ./poc.html:/lab/poc.html:ro
+    labels:
+      lab: CVE-2026-126910
+      cve: CVE-2026-126910
+    environment:
+      PYTHONUNBUFFERED: "1"
